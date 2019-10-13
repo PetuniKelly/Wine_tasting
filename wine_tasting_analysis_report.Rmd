@@ -1,0 +1,66 @@
+---
+title: "Wine Ratings"
+author: "Zengqi “Kelly” Lu"
+date: "10/13/2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+theme_set(theme_light())
+
+wine_ratings <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-28/winemag-data-130k-v2.csv") %>%
+  select(-X1) %>% 
+  extract(title, "year", "(\\d\\d\\d\\d)", convert = TRUE) 
+
+# X1 is the row number, which we don't need. 
+
+```
+
+```{r}
+wine_ratings %>% 
+  View()
+
+# in the View(), we browse through the variables, and checked the point range, and now we will go column by column and get a better feel for some of the columns
+```
+
+```{r}
+wine_ratings %>%
+  count(country, sort = T)
+
+# We see US, France, Italy, Spain, Portugal, Chile, definitely classic wine countries producing wine. 
+
+# Then we noticed that there is no year, the year is in the title, so we decide to extract year from the title. By using extract function in tidyr package, using regular expression to represent year is 4 digits in a row. 
+
+wine_ratings %>%
+  extract(title, "year", "(\\d\\d\\d\\d)") %>%
+  View()
+
+# Right now, year is a character viable, and I can convert it to numeric
+
+wine_ratings %>%
+  extract(title, "year", "(\\d\\d\\d\\d)", convert = TRUE) 
+
+# now throw this into the cleaning step, and I got my year data
+
+# I don't know what designation is, so I want to count it, everytime I see a categorical variable, I want to count it.
+
+wine_ratings %>%
+  count(designation, sort = T)
+
+wine_ratings %>%
+  count(country, region_1, sort = TRUE)
+
+# It could be interesting to say what's the variation of regions within US. 
+
+wine_ratings %>%
+  count(taster_name, sort = TRUE)
+```
+
+
