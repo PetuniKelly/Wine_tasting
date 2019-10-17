@@ -17,7 +17,8 @@ theme_set(theme_light())
 
 wine_ratings <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2019/2019-05-28/winemag-data-130k-v2.csv") %>%
   select(-X1) %>% 
-  extract(title, "year", "(\\d\\d\\d\\d)", convert = TRUE) 
+  extract(title, "year", "(20\\d\\d)", convert = TRUE, remove = FALSE)  %>%
+  mutate(year = ifelse(year < 1900, NA, year))
 
 # X1 is the row number, which we don't need. 
 
@@ -61,6 +62,199 @@ wine_ratings %>%
 
 wine_ratings %>%
   count(taster_name, sort = TRUE)
+
+# We see that there are few tasters that reviewed thousands of wines, this could be interesting, and we should definitely control it for, when we fit a model, because there might be confounding. 
+
+wine_ratings %>%
+  count(variety, sort = TRUE)
+
+# Types of grapes: Pino Noir, Chardonnay, ...
+
+wine_ratings %>%
+  filter(!is.na(designation)) %>%
+  count(variety, designation, sort = TRUE)
+
+# if I count variety and designation, and we see some common combinations: Cabernet Sauvignon
+
+wine_ratings %>%
+  ggplot(aes(year)) +
+  geom_histogram()
+
+# We noticed some not so good data, let's find out, there is at least one year that is greater than 2030.
+
+wine_ratings %>%
+  filter(year >= 2030) %>%
+  select(title)
+
+# here we noticed that no title in the data set, we removed the original title variable when extracting the year variable, so we went back to the cleaning step and added the remove = FALSE, and also we edited the regular expression to make sure the first digit has to be either a one or a two. 
+
+wine_ratings %>%
+  filter(year <= 1900) %>%
+  select(title)
+
+# There are some records that have the year of the winery, not the wine itself, we need to fix this. Go back to the cleaning step and made the year only after 2000.
+
+wine_ratings %>%
+  ggplot(aes(year)) +
+  geom_histogram()
+
+wine_ratings %>%
+  ggplot(aes(points)) +
+  geom_histogram()
+
+# points are mostly between 80 and 100, but I don't like that binwidth, I'm going to say binwidth=1
+
+wine_ratings %>%
+  ggplot(aes(points)) +
+  geom_histogram(binwidth = 1)
+
+# looks like it mostly centered around 87 as the peak. 
+
+wine_ratings %>%
+  ggplot(aes(points)) +
+  geom_histogram(binwidth = 0.5)
+
+# there is a dip at 89. 
+
+wine_ratings %>%
+  ggplot(aes(points)) +
+  geom_histogram(binwidth = 1)
+
+# And it's mostly normally distributed and it's pretty good for fitting a linear model. 
+
+
+wine_ratings %>%
+  ggplot(aes(points)) +
+  geom_histogram(binwidth = 1)
+
+# And it's mostly normally distributed and it's pretty good for fitting a linear model. 
+
+wine_ratings %>%
+  ggplot(aes(price)) +
+  geom_histogram() +
+  scale_x_log10()
+
+# let's put it on the log scale. There it is. It's a log normal. If we want to predict the price, we need to predict the log of the price. It looks like median is about 30. It' the median price.
+
+
+
 ```
+
+```{r}
+# Okay, let's do some predictions.
+
+# Let's predict points first. I'm interested in predicting both points and price, but we start with points first. Let's how "good" a wine is. 
+
+ggplot(wine_ratings, aes(price, points)) + 
+  geom_point(alpha = .1) +
+  geom_smooth(method = "lm") +
+  scale_x_log10()
+
+# It's rare for the points to be on the edges, but we do see some variation. For a $50 wine you can get a point of 80 - 95. That's good to know, but we definitely need this as a predictor. 
+summary(lm(points ~ log2(price), wine_ratings))
+```
+
+Every time the price doubles, the expected number of points goes up by 2. 
+
+```{r}
+# Let's add a few more things to this model.  
+
+# Country was one we saw before, the wine data set comes from 44 countries, but a lot of them are from a few most common contries. There is going to be a long tail. 
+
+wine_ratings %>%
+  mutate(country = fct_relevel(fct_lump(country, 7), "US")) %>%
+  lm(points ~ log2(price) + country, data = .) %>%
+  summary()
+
+# I'm going to use broom package to clean up this a little bit more, but this is also good to keep track of, for example, adjusted R-squared.
+
+# I re-lump the country into 7 categories, instead of 44. And I re-level the reference to say how does each country compare to the rest of the world. But then every country is negative. So it means all the good wines come from the other region. I change the base level to US and US is kind of in the middle. It looks like it's a shame to like South American Reds, Argentina and Chile wine have a penalty for points, and Portugal has a bonus, Italy is pretty similar to the US.
+
+# The other way that I could look at this would have been to take this lumped country and done a boxplot on it. 
+
+wine_ratings %>%
+  mutate(country = fct_relevel(fct_lump(country, 7), "US")) %>%
+  mutate(country = fct_reorder(country, points)) %>%
+  ggplot(aes(country, points)) + 
+  geom_boxplot() +
+  coord_flip()
+
+# Maybe do a coord flip, maybe do a fct reorder on our countries. 
+
+# Chile and Argentina has the lowest rated wines, and France has the highest. US is somewhere in the middle.
+
+
+# What's the relationship with year? I bet there is one.
+
+wine_ratings %>%
+  ggplot(aes(year, points, group = year)) + 
+  geom_boxplot()
+
+# I don't see a general trend, but I could have done this differently. I could say:
+
+wine_ratings %>%
+  group_by(year) %>%
+  summarize(points = mean(points)) %>%
+  ggplot(aes(year, points)) + 
+  geom_line()
+
+# 2017 is a lower rating. how much data is in 2017?
+
+wine_ratings %>%
+  group_by(year) %>%
+  summarize(average_points = mean(points), n()) 
+
+# The answer is 2017 only have 11 data points, so this could be easily just noise. 
+```
+
+```{r}
+wine_ratings %>%
+  mutate(country = fct_relevel(fct_lump(country, 7), "US")) %>%
+  lm(points ~ log2(price) + country + year, data = .) %>%
+  summary()
+
+# Add year to the model as a linear trend. Each year add 1.2 points. And our R-squared got better after adding year. 
+
+
+```
+
+```{r}
+
+# What else should I add to the model? should I do region? designation? Reviewer? I should do reviewer, because we may need to control for reviewer. 
+
+wine_ratings %>%
+  mutate(reviewer = fct_reorder(fct_lump(taster_name, 10), points)) %>%
+  ggplot(aes(reviewer, points)) + 
+  geom_boxplot() +
+  coord_flip()
+
+# there is definitely differences between people. 
+
+wine_ratings %>%
+  replace_na(list(taster_name = "Missing")) %>%
+  mutate(taster_name = fct_relevel(fct_lump(taster_name, 6), "Missing")
+    , country = fct_relevel(fct_lump(country, 7), "US")) %>%
+  lm(points ~ log2(price) + country + year + taster_name, data = .) %>%
+  summary()
+
+# We are at a point that we have a lot of factors, and we are going to do a coefficient plot, my favoriate kinds of model visualizations. 
+
+
+```
+
+```{r}
+
+# I'm going to bring library broom, and I'm going to tidy this. So now I have data frame instead of other type of object. 
+library(broom)
+
+wine_ratings %>%
+  replace_na(list(taster_name = "Missing")) %>%
+  mutate(taster_name = fct_relevel(fct_lump(taster_name, 6), "Missing")
+    , country = fct_relevel(fct_lump(country, 7), "US")) %>%
+  lm(points ~ log2(price) + country + year + taster_name, data = .) %>%
+  tidy()
+
+```
+
 
 
